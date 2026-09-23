@@ -1,0 +1,106 @@
+/* cleave — VSCode-style side-by-side diff. All styles scoped under .cleave so it
+   drops into any page without leaking. Single committed dark theme (IDE aesthetic);
+   the caller gives the .cleave element a height. */
+.cleave{
+  color-scheme: dark;
+  --bg:#1e1e1e; --panel:#252526; --titlebar:#323233;
+  --text:#d4d4d4; --dim:#8b8b8b; --faint:#6a6a6a;
+  --divider:#3c3c3c; --line:#2a2a2a; --accent:#4aa5f0;
+
+  --del:#f85149; --del-bg:rgba(248,81,73,.14); --del-word:rgba(248,81,73,.42); --del-band:rgba(248,81,73,.16);
+  --add:#3fb950; --add-bg:rgba(63,185,80,.14); --add-word:rgba(63,185,80,.40); --add-band:rgba(63,185,80,.16);
+  --mod:#e2b93d; --mod-band:rgba(226,185,61,.18);
+
+  --k:#569cd6; --str:#ce9178; --fn:#dcdcaa; --num:#b5cea8; --ty:#4ec9b0; --prop:#9cdcfe;
+  --ui:"Inter",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --rowh:22px; --connw:96px;
+
+  display:flex;flex-direction:column;height:100%;min-height:0;overflow:hidden;
+  background:var(--bg);color:var(--text);font-family:var(--ui);
+}
+.cleave *{box-sizing:border-box}
+
+.cleave .titlebar{background:var(--titlebar);display:flex;align-items:center;gap:10px;
+  padding:8px 14px;border-bottom:1px solid #000;flex:none}
+.cleave .dots{display:flex;gap:7px;margin-right:4px}
+.cleave .dots i{width:12px;height:12px;border-radius:50%}
+.cleave .dots i:nth-child(1){background:#ff5f56}.cleave .dots i:nth-child(2){background:#ffbd2e}.cleave .dots i:nth-child(3){background:#27c93f}
+.cleave .fname{font-family:var(--mono);font-size:12.5px;color:#cfcfcf}
+.cleave .fname b{color:#fff;font-weight:700}
+.cleave .titlebar .sub{color:var(--faint);font-size:12px}
+
+.cleave .ribbon{background:var(--panel);border-bottom:1px solid var(--divider);
+  display:flex;align-items:center;gap:20px;padding:11px 16px;flex-wrap:wrap;flex:none}
+.cleave .stat{display:flex;flex-direction:column;gap:1px}
+.cleave .stat .n{font-family:var(--mono);font-size:19px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.cleave .stat .l{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.cleave .n.add{color:var(--add)}.cleave .n.del{color:var(--del)}.cleave .n.mod{color:var(--mod)}
+.cleave .spacer{flex:1}
+.cleave .legend{display:flex;gap:13px;align-items:center;font-size:11.5px;color:var(--dim);flex-wrap:wrap}
+.cleave .legend span{display:inline-flex;align-items:center;gap:6px}
+.cleave .sw{width:11px;height:11px;border-radius:3px;display:inline-block}
+.cleave .sw.a{background:var(--add-bg);box-shadow:inset 2px 0 0 var(--add)}
+.cleave .sw.d{background:var(--del-bg);box-shadow:inset 2px 0 0 var(--del)}
+.cleave .sw.w{background:var(--add-word)}
+.cleave .car{color:var(--add);font-weight:700}
+
+.cleave .heads{display:grid;grid-template-columns:1fr var(--connw) 1fr;flex:none;
+  background:#252526;border-bottom:1px solid var(--divider)}
+.cleave .heads .h{padding:7px 14px;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim)}
+.cleave .heads .h.r{color:#9fd0a0}
+.cleave .heads .h.mid{text-align:center;color:var(--faint);border-inline:1px solid var(--divider)}
+.cleave .heads .h b{font-family:var(--mono);text-transform:none;letter-spacing:0;color:#cdcdcd;font-weight:400}
+
+.cleave .stage{flex:1;position:relative;min-height:0}
+.cleave .editor{position:absolute;inset:0;overflow:auto;padding-right:22px}
+.cleave.no-minimap .editor{padding-right:0}
+.cleave .grid{display:grid;grid-template-columns:1fr var(--connw) 1fr;position:relative;min-width:640px}
+.cleave.no-conn .grid{grid-template-columns:1fr 0 1fr}
+
+.cleave .pane{display:grid;grid-template-columns:max-content 1fr;align-content:start}
+.cleave .conn{position:relative;background:var(--bg);border-inline:1px solid var(--line)}
+.cleave.no-conn .conn{border-inline:0}
+.cleave .conn svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+
+.cleave .g{height:var(--rowh);line-height:var(--rowh);text-align:right;color:var(--faint);
+  user-select:none;padding:0 10px;background:var(--bg);white-space:nowrap;
+  font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums;position:relative}
+.cleave .c{height:var(--rowh);line-height:var(--rowh);padding:0 12px;white-space:pre;overflow:hidden;
+  background:var(--bg);font-family:var(--mono);font-size:12.5px}
+
+.cleave .g.r-del,.cleave .c.r-del{background:var(--del-bg)}
+.cleave .c.r-del{box-shadow:inset 2px 0 0 var(--del)}
+.cleave .g.r-add,.cleave .c.r-add{background:var(--add-bg)}
+.cleave .c.r-add{box-shadow:inset 2px 0 0 var(--add)}
+.cleave .c.r-mod{box-shadow:inset 2px 0 0 var(--mod)}
+.cleave .g.r-mod{background:var(--mod-band)}
+.cleave .g.r-pad,.cleave .c.r-pad{background:#1b1b1b;
+  background-image:repeating-linear-gradient(135deg,transparent,transparent 6px,rgba(255,255,255,.02) 6px,rgba(255,255,255,.02) 12px)}
+.cleave .mk{display:inline-block;width:1ch;margin-right:2px;font-weight:700}
+.cleave .c.r-del .mk{color:var(--del)}.cleave .c.r-add .mk{color:var(--add)}.cleave .c.r-mod .mk{color:var(--mod)}
+.cleave .g.hoverrow,.cleave .c.hoverrow{filter:brightness(1.22)}
+
+.cleave .caret{position:absolute;right:2px;top:50%;transform:translateY(-50%);font-size:11px;line-height:1}
+.cleave .caret.d{color:var(--del)}.cleave .caret.a{color:var(--add)}
+
+.cleave .chg{border-radius:2px;padding:1px 0}
+.cleave .c.wl .chg{background:var(--add-word)}
+.cleave .cl .chg.del{background:var(--del-word)}
+
+.cleave .k{color:var(--k)}.cleave .str{color:var(--str)}.cleave .fn{color:var(--fn)}
+.cleave .num{color:var(--num)}.cleave .ty{color:var(--ty)}.cleave .prop{color:var(--prop)}.cleave .pl{color:var(--text)}
+
+.cleave .minimap{position:absolute;top:0;right:0;bottom:0;width:22px;background:#181818;
+  border-left:1px solid var(--divider);cursor:pointer}
+.cleave.no-minimap .minimap{display:none}
+.cleave .mm-tick{position:absolute;left:3px;right:3px;border-radius:1px;min-height:3px}
+.cleave .mm-tick.add{background:var(--add)}.cleave .mm-tick.del{background:var(--del)}.cleave .mm-tick.mod{background:var(--mod)}
+.cleave .mm-view{position:absolute;left:0;right:0;background:rgba(255,255,255,.09);
+  border:1px solid rgba(255,255,255,.16);border-radius:2px;pointer-events:none}
+
+@media (max-width:720px){
+  .cleave .ribbon{gap:12px}.cleave .stat .n{font-size:16px}
+  .cleave .c,.cleave .g{font-size:11px}
+}
+@media (prefers-reduced-motion:no-preference){ .cleave .editor{scroll-behavior:smooth} }

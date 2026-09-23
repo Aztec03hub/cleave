@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>cleave — programmatic embed</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;500;600;700&display=swap">
+<!-- Load the library from source (relative paths). In production you might inline these,
+     or copy src/cleave.css + src/cleave.js next to your page. -->
+<link rel="stylesheet" href="../src/cleave.css">
+<style>
+  html,body{height:100%;margin:0;background:#1e1e1e;color:#d4d4d4;font-family:"Inter",system-ui,sans-serif}
+  .page{display:flex;flex-direction:column;height:100vh}
+  .page h1{font-size:14px;font-weight:600;margin:0;padding:12px 16px;color:#9cdcfe;background:#252526;border-bottom:1px solid #3c3c3c}
+  #diff{flex:1;min-height:0}   /* cleave fills whatever box you give it */
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>cleave embedded in a host page — the &lt;div id="diff"&gt; below is sized by its container</h1>
+  <div id="diff"></div>
+</div>
+
+<script src="../src/cleave.js"></script>
+<script>
+  Cleave.render('#diff', {
+    filename: 'rate_limiter.py',
+    language: 'js',            // JS-flavored highlighter; use 'text' to disable
+    leftLabel: 'main', leftSub: 'a3f21c',
+    rightLabel: 'PR #482', rightSub: 'patch',
+    before:
+`def allow(key):
+    now = time.time()
+    bucket = BUCKETS[key]
+    if bucket.tokens < 1:
+        return False
+    bucket.tokens -= 1
+    return True`,
+    after:
+`def allow(key):
+    now = time.monotonic()
+    bucket = BUCKETS.setdefault(key, Bucket())
+    bucket.refill(now)
+    if bucket.tokens < 1:
+        log.debug("throttled %s", key)
+        return False
+    bucket.tokens -= 1
+    return True`
+  });
+</script>
+</body>
+</html>
