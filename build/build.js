@@ -33,7 +33,10 @@ const FONTS =
 function arg(names, def) {
   for (const n of names) {
     const i = process.argv.indexOf(n);
-    if (i >= 0 && i + 1 < process.argv.length) return process.argv[i + 1];
+    if (i < 0) continue;
+    const v = process.argv[i + 1];
+    if (v === undefined || v.startsWith('--')) die(n + ' needs a value');
+    return v;
   }
   return def;
 }
@@ -43,19 +46,36 @@ const GOLD = path.join(ROOT, 'examples/gold');
 
 const flag = n => process.argv.includes(n);
 
-// a file as it was at a git ref ('' if it did not exist there, e.g. a newly added file)
+function die(msg) { console.error('build: ' + msg); process.exit(2); }
+
+// git runs from the file's own directory, so this works from anywhere
+function git(file, args) {
+  return execFileSync('git', ['-C', path.dirname(path.resolve(file))].concat(args),
+    { encoding: 'utf8', maxBuffer: 1 << 28, stdio: ['ignore', 'pipe', 'pipe'] });
+}
+// a file as it was at a git ref; '' only when the file genuinely did not exist there
+// (e.g. newly added). A bad ref or a path outside a repo is an error, never an empty side.
 function gitShow(ref, file) {
-  const rel = path.relative(process.cwd(), path.resolve(file)).split(path.sep).join('/');
-  try { return execFileSync('git', ['show', ref + ':./' + rel], { encoding: 'utf8', maxBuffer: 1 << 28 }); }
-  catch (e) { console.error('note: ' + file + ' not found at ' + ref + ', treating as empty'); return ''; }
+  if (!ref) die('--git: empty ref (use REF or REF1..REF2)');
+  try { git(file, ['rev-parse', '--verify', '--quiet', ref + '^{commit}']); }
+  catch (e) { die('--git: not a commit: ' + ref + ' (or ' + file + ' is not inside a git repo)'); }
+  try { return git(file, ['show', ref + ':./' + path.basename(file)]); }
+  catch (e) {
+    if (/does not exist in|exists on disk, but not in/.test(String(e.stderr))) {
+      console.error('note: ' + file + ' not present at ' + ref + ', treating as empty');
+      return '';
+    }
+    die('--git: git show failed: ' + String(e.stderr || e.message).trim());
+  }
 }
 
-const git = arg(['--git']);
+const gitRange = arg(['--git']);
 let before, after, leftSub, rightSub, name;
-if (git) {
+if (gitRange) {
   const file = arg(['--file']);
-  if (!file) { console.error('--git needs --file PATH'); process.exit(2); }
-  const [r1, r2] = git.split('..');
+  if (!file) die('--git needs --file PATH');
+  const [r1, r2] = gitRange.split(/\.{2,3}/);   // A..B and A...B both mean: A vs B (not a merge-base diff)
+  if (r2 === '') die('--git: empty ref after ".." (use REF or REF1..REF2)');
   before = gitShow(r1, file);
   after = r2 ? gitShow(r2, file) : fs.readFileSync(file, 'utf8');
   leftSub = r1; rightSub = r2 || 'working tree'; name = path.basename(file);

@@ -108,6 +108,8 @@ node build/build.js --before old.py --after new.py --out mydiff.html     # langu
 node build/build.js --git HEAD~1 --file src/app.js --out mydiff.html     # a ref vs the working tree
 node build/build.js --git v1.0..v2.0 --file src/app.js --out mydiff.html # two refs
 ```
+`--git` works from any directory. A bad ref or a path outside a repo is an error (exit 2);
+a file that did not exist at a ref is shown as empty. `A...B` is treated like `A..B`.
 Other flags: `--filename`, `--lang`, `--left`, `--right`, `--subtitle`, `--unified`,
 `--no-collapse`, `--ignore-ws`, `--form artifact`.
 
@@ -192,8 +194,9 @@ grey/amber outlines are drawn over the panes by `drawSel()`.
    - *with changes*: a deleted run and an added run in different hunks whose lines
      mostly match (LCS density ≥ 0.6, ≥ 3 matches, 2 substantial). Edited lines inside
      get `pair`/`pc`. Blank lines at the edges are trimmed.
-   - *exact*: a deleted run reappearing as an added run (whitespace ignored), ≥ 2 lines,
-     one with 8+ characters, so lone braces never count.
+   - *exact*: a deleted run reappearing as an added run in a different hunk (whitespace
+     ignored), ≥ 2 lines, one with 8+ characters, so lone braces never count and a block
+     re-indented in place (e.g. wrapped in an `if`) is an edit, not a move.
    - a closing-bracket line right after both ends of a move joins it.
 3. **Hunk pairing** (`pairHunks`): within each changed hunk, deleted and added lines are
    aligned to maximise total similarity (small DP); a pair becomes `mod` only at
@@ -203,7 +206,7 @@ grey/amber outlines are drawn over the panes by `drawSel()`.
    characters are overlaid on the syntax-highlighted line (`paint`).
 
 This is LCS, not Myers: O(n·m) over the changed middle, fine for file-sized diffs, not
-meant for megabyte rewrites. `test.js` checks that the rows rebuild both files exactly.
+meant for megabyte rewrites. `test.js` checks that the rows rebuild both files exactly, on the gold example and on 400 seeded random edit/move scenarios.
 
 ---
 
@@ -216,7 +219,7 @@ dist/cleave.standalone.html   generated full-page file (open anywhere)
 dist/cleave.artifact.html     generated body-only file (paste into a Claude artifact)
 examples/programmatic.html    host-page embed example (Python, language inferred)
 examples/gold/before.js|after.js   gold-standard diff covering every case (default sample)
-test.js                 `node test.js`: asserts on the diff logic, incl. a round trip
+test.js                 `node test.js`: asserts on the diff logic, incl. a round trip and a seeded fuzz
 ```
 `dist/*` is generated: edit `src/*`, then `node build/build.js`. `src/` is the single
 source of truth, so the inlined JS/CSS can never drift.

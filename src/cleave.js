@@ -152,11 +152,14 @@
       }
     });
 
-    // exact moves among what is left
+    // exact moves among what is left; the two ends must sit in different hunks, so a
+    // block re-indented in place (e.g. wrapped in an if) is not reported as a move
+    var hk = [], hn = 0;
+    ops.forEach(function (o) { if (o.t === 'ctx') hn++; hk.push(hn); });
     for (i = 0; i < ops.length; i++) {
       if (ops[i].t !== 'del' || ops[i].mv || !key(ops[i].l)) continue;
       for (j = 0; j < ops.length; j++) {
-        if (ops[j].t !== 'add' || ops[j].mv || key(ops[j].r) !== key(ops[i].l)) continue;
+        if (ops[j].t !== 'add' || ops[j].mv || hk[j] === hk[i] || key(ops[j].r) !== key(ops[i].l)) continue;
         for (k = 0; i + k < ops.length && j + k < ops.length && ops[i + k].t === 'del' && ops[j + k].t === 'add' &&
              !ops[i + k].mv && !ops[j + k].mv && key(ops[i + k].l) === key(ops[j + k].r); k++);
         while (k && !key(ops[i + k - 1].l)) k--;
@@ -483,12 +486,19 @@
     }
 
     /* --- full redraw of the diff body (keeps the scroll anchor) --- */
-    function draw() {
-      var anchor = null, off = 0;
-      if (items && items.length) {
-        var tp = Math.min(items.length - 1, Math.floor(editor.scrollTop / ROWH)), it = items[tp];
-        anchor = it.fold ? it.fold[0] : it.lab ? moves[it.lab][it.s === 'L' ? 'la' : 'ra'] : it.i; off = editor.scrollTop - tp * ROWH;
-      }
+    // the row at the top of the viewport, as a line number on each side (survives a recompute)
+    function topAnchor() {
+      if (!items || !items.length) return null;
+      var tp = Math.min(items.length - 1, Math.floor(editor.scrollTop / ROWH)), it = items[tp], r;
+      r = it.fold ? it.fold[0] : it.lab ? (moves[it.lab] ? moves[it.lab][it.s === 'L' ? 'la' : 'ra'] : 0) : it.i;
+      return { l: lnAt[r], r: rnAt[r], off: editor.scrollTop - tp * ROWH };
+    }
+    function anchorRow(a) {
+      for (var i = 0; i < rows.length; i++) if ((a.l && lnAt[i] >= a.l) || (!a.l && a.r && rnAt[i] >= a.r)) return i;
+      return rows.length - 1;
+    }
+    function draw(anc) {
+      if (anc === undefined) anc = topAnchor();
       layout();
       var uni = S.view === 'unified', split = !uni;
       target.classList.toggle('unified', uni);
@@ -545,7 +555,7 @@
         navLabel();
       }
 
-      if (anchor != null) editor.scrollTop = posOfRow(anchor) * ROWH + off;
+      if (anc && rows.length) editor.scrollTop = posOfRow(anchorRow(anc)) * ROWH + anc.off;
       relayout();
     }
     function relayout() {
@@ -633,8 +643,12 @@
 
     /* --- Compare: a side-by-side diff of just the two ends of a moved block --- */
     var cmpApi = null;
+    function setInert(v) {
+      [].slice.call(target.children).forEach(function (el) { if (!el.classList.contains('cmp')) el.inert = v; });
+    }
     function closeCompare() {
       var o = target.querySelector('.cmp');
+      setInert(false);
       if (cmpApi) cmpApi.destroy();
       cmpApi = null;
       if (o) o.remove();
@@ -649,16 +663,21 @@
       };
       var o = document.createElement('div');
       o.className = 'cmp';
-      o.innerHTML = '<div class="cmp-win" role="dialog" aria-label="Compare moved block"><div class="cmp-bar">' +
+      o.innerHTML = '<div class="cmp-win" role="dialog" aria-modal="true" aria-label="Compare moved block"><div class="cmp-bar">' +
         '<span>Moved block: before ' + moveRange(m, false) + ' &rarr; after ' + moveRange(m, true) + '</span><span class="spacer"></span>' +
         '<button type="button" class="tb cmp-close">Close (Esc)</button></div><div class="cmp-body"></div></div>';
       target.appendChild(o);
+      setInert(true);
       cmpApi = render(o.querySelector('.cmp-body'), {
         before: side('del', m.la, m.lb, 'l'), after: side('add', m.ra, m.rb, 'r'),
         filename: opts.filename, language: LKEY, highlight: opts.highlight, tabSize: opts.tabSize,
         leftLabel: 'Before', leftSub: moveRange(m, false), rightLabel: 'After', rightSub: moveRange(m, true),
         collapse: false, features: { minimap: false, toolbar: false }
       });
+      // size the window to its content (a few-line block should not fill the screen)
+      var win = o.querySelector('.cmp-win'), cb = o.querySelector('.cmp-body');
+      win.style.height = Math.min(o.clientHeight - 56, o.querySelector('.cmp-bar').offsetHeight +
+        cb.querySelector('.ribbon').offsetHeight + cb.querySelector('.editor').scrollHeight + 4) + 'px';
       o.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeCompare(); e.stopPropagation(); });
       o.addEventListener('click', function (e) { if (e.target === o || e.target.closest('.cmp-close')) closeCompare(); });
       o.querySelector('.cmp-close').focus();
@@ -684,9 +703,11 @@
     }
     function go(dir) {
       if (!hunks.length) return;
-      var cur = (editor.scrollTop + (editor.clientHeight - hh()) / 3) / ROWH, k, n = hunks.length;
-      if (dir > 0) { for (k = 0; k < n && hunkPos(hunks[k]) <= cur + 0.5; k++); if (k === n) k = 0; }
-      else { for (k = n - 1; k >= 0 && hunkPos(hunks[k]) >= cur - 0.5; k--); if (k < 0) k = n - 1; }
+      var top = editor.scrollTop / ROWH, bot = top + (editor.clientHeight - hh()) / ROWH, k, n = hunks.length;
+      var onScreen = S.nav >= 0 && S.nav < n && hunkPos(hunks[S.nav]) >= top - 0.5 && hunkPos(hunks[S.nav]) <= bot;
+      if (onScreen) k = (S.nav + dir + n) % n;
+      else if (dir > 0) { for (k = 0; k < n && hunkPos(hunks[k]) < top - 0.5; k++); if (k === n) k = 0; }
+      else { for (k = n - 1; k >= 0 && hunkPos(hunks[k]) > bot; k--); if (k < 0) k = n - 1; }
       S.nav = k; navLabel();
       scrollToPos(hunkPos(hunks[k])); flash(hunkPos(hunks[k]), hunkEnd(hunks[k]));
     }
@@ -823,7 +844,10 @@
       on(q('.nav-next'), 'click', function () { go(1); });
       on(q('.t-view'), 'click', function () { S.view = S.view === 'split' ? 'unified' : 'split'; draw(); });
       on(q('.t-fold'), 'click', function () { S.collapse = !S.collapse; S.open = {}; draw(); });
-      if (q('.t-ws')) on(q('.t-ws'), 'click', function () { S.ignoreWs = !S.ignoreWs; S.sel = 0; S.nav = -1; compute(); draw(); });
+      if (q('.t-ws')) on(q('.t-ws'), 'click', function () {
+        var anc = topAnchor();
+        S.ignoreWs = !S.ignoreWs; S.sel = 0; S.nav = -1; compute(); draw(anc);
+      });
     }
     on(target, 'keydown', function (e) {
       if (e.key === 'F7' || (e.altKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp'))) {

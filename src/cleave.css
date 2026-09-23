@@ -148,8 +148,8 @@
 .cleave .mvcmp:hover{background:#4a4a4a}
 
 /* Compare window over the diff */
-.cleave .cmp{position:absolute;inset:0;z-index:20;background:rgba(0,0,0,.55);display:flex;padding:28px}
-.cleave .cmp-win{flex:1;display:flex;flex-direction:column;min-width:0;border:1px solid var(--mod);border-radius:6px;
+.cleave .cmp{position:absolute;inset:0;z-index:20;background:rgba(0,0,0,.55);display:flex;align-items:center;padding:28px}
+.cleave .cmp-win{flex:1;max-height:100%;display:flex;flex-direction:column;min-width:0;border:1px solid var(--mod);border-radius:6px;
   overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.6);background:var(--bg)}
 .cleave .cmp-bar{display:flex;align-items:center;gap:10px;padding:6px 8px 6px 14px;background:var(--titlebar);font-size:12px;color:var(--text);flex:none}
 .cleave .cmp-body{flex:1;min-height:0}
