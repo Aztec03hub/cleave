@@ -21,6 +21,46 @@ from Google Fonts, with system fallbacks.
 
 ---
 
+## The brief (what the owner asked for)
+
+This is the full feature wishlist that drove the project, kept here so it never has
+to be re-explained. Every item is **done**; treat the list as the spec to preserve —
+don't regress any of it, and new work should extend it in the same spirit.
+
+- [x] **A beautiful VSCode-style code diff** — "like I'm looking at it in VSCode or
+      some other amazing and beautiful code diff view." The aesthetic matters, not
+      just correctness. Keep it looking like a real IDE.
+- [x] **Side-by-side panes** — before on the left, after on the right.
+- [x] **Red highlighting for removed lines** (full line background, not just a marker).
+- [x] **Green highlighting for added lines** (full line background).
+- [x] **Amber highlighting for modified lines.**
+- [x] **Word-level highlighting** — highlight the exact words that changed inside a
+      modified line, not just the whole line.
+- [x] **A way to see *where* insertions/deletions happened** — delivered as THREE
+      locators, all on at once:
+    - [x] **Gutter caret markers** (`▸` / `◀`) at the insert/delete point.
+    - [x] **A thin connector gutter** drawing bands between the two panes (the middle
+          "where" column).
+    - [x] **A scrollbar minimap** with colored ticks (+ draggable viewport, click to jump).
+- [x] **Hover a line → highlight that line** (across both panes).
+- [x] **Works standalone AND plugs easily into a Claude Artifact page.**
+- [x] **Standalone HTML creation supported** — so it can be used with other LLMs from
+      different providers, not just Claude. (Hand any LLM the standalone file + the
+      JSON contract; no build tools or Claude-specific anything required.)
+- [x] **Its own project a fresh Claude Code session can take over** — this repo, with a
+      README carrying everything needed (see "For a fresh Claude Code session" below).
+- [x] **Reusable for other diff views** — drop in any two texts; the diff is computed,
+      not hardcoded. Meant to be reached for again and again.
+- [x] **Zero dependencies.**
+
+### Nice-to-haves not yet built (open ideas, not requested)
+- Collapse/fold long runs of unchanged lines ("⋯ N unchanged").
+- A light theme (currently single committed dark, by design).
+- Non-JS syntax highlighters (today: JS-flavored + plain `text`; `opts.highlight` is the hook).
+- Unified (inline) diff mode in addition to side-by-side.
+
+---
+
 ## Quick start
 
 ### Standalone / other LLMs
