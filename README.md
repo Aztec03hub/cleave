@@ -51,12 +51,15 @@ shape, never a new colour. Neutral greys are for chrome only.
 - [x] **Moved blocks, VSCode style**: a moved block stays red where it left and green
       where it landed, marked `»`. In the WHERE column each move gets **its own lane**:
       a single thin line from the old spot, along the lane with direction chevrons,
-      into an arrowhead at the new spot. **Click a moved block** (either end, or its
-      lane) to select it: both ends get an amber outline, the lane turns amber, and a
-      label ("moved to lines 13-16") jumps to the other end. `m` / `Shift+m` cycle
-      moves, `Esc` clears. **Moves with changes** are detected too: lines edited inside
-      the moved block render amber with word highlights against their counterpart.
-      A trailing closing bracket joins the move.
+      into an arrowhead at the new spot. Both ends of every move are **always outlined
+      in grey**, under a header row reading "Moved to lines 13-16" / "Moved from lines
+      79-82" (click it to jump to the other end). **Click a moved block** (either end,
+      its header, or its lane) to select it: both outlines and the lane turn amber.
+      `m` / `Shift+m` cycle moves, `Esc` clears. **Moves with changes** are detected too:
+      lines edited inside the block render amber with word highlights against their
+      counterpart, and the header reads "Moved with changes to lines 18-23" with a
+      **Compare** button that opens a side-by-side diff of just the two ends (`Esc` or
+      Close to dismiss). A trailing closing bracket joins the move.
 - [x] **Hover a line → highlight that line** across both panes.
 - [x] **Headers aligned exactly with the body**, WHERE included (sticky header row on
       the same column template as the body).
@@ -91,7 +94,6 @@ shape, never a new colour. Neutral greys are for chrome only.
 
 ### Open ideas (not requested)
 - A light theme (currently single committed dark, by design).
-- A "Compare" action on a moved-with-changes block (VSCode shows a mini diff of the two ends).
 
 ---
 
@@ -179,6 +181,9 @@ into the same element again destroys the previous instance first (listeners, obs
 - `mod` changed line on both sides; triggers word-level highlighting
 - `mv` on `del`/`add` rows: rows sharing an `mv` id are one moved block (both ends)
 - `pair` + `pc`: a line edited inside a moved block, with its counterpart's text
+
+The display list (`layout()`) adds a header item above each end of every move; the
+grey/amber outlines are drawn over the panes by `drawSel()`.
 
 ### Diff algorithm
 1. **Line diff:** normalise CRLF, drop a shared trailing newline, trim the common

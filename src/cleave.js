@@ -326,11 +326,12 @@
               ignoreWs: !!opts.ignoreWhitespace, open: {}, sel: 0, nav: -1 };
     var ac = new AbortController(), ro = null;
     var on = function (el, ev, fn, o) { el.addEventListener(ev, fn, Object.assign({ signal: ac.signal }, o || {})); };
-    var api = { rows: null, stats: null, destroy: function () { ac.abort(); if (ro) ro.disconnect(); if (target._cleave === api) delete target._cleave; } };
+    var api = { rows: null, stats: null, destroy: function () { ac.abort(); if (ro) ro.disconnect(); if (cmpApi) cmpApi.destroy(); if (target._cleave === api) delete target._cleave; } };
     target._cleave = api;
 
     var custom = typeof opts.highlight === 'function' ? opts.highlight : null;
-    var LANG = f.syntax && !custom ? LANGS[opts.language != null ? langKey(opts.language) : langFromFilename(opts.filename)] : null;
+    var LKEY = opts.language != null ? langKey(opts.language) : langFromFilename(opts.filename);
+    var LANG = f.syntax && !custom ? LANGS[LKEY] : null;
 
     /* --- model --- */
     var rows, lnAt, rnAt, moves, segL, segR, hunks, st;
@@ -356,11 +357,18 @@
     }
 
     /* --- display list: rows (or unified lines) plus folds of unchanged runs --- */
-    var items, posL, posR;
+    var items, posL, posR, posLab;
     function layout() {
-      items = []; posL = []; posR = [];
-      var n = rows.length, i = 0, k;
+      items = []; posL = []; posR = []; posLab = {};
+      var n = rows.length, i = 0, k, labAt = {};
+      // every moved block gets a header row (label + Compare) above each of its two ends
+      Object.keys(moves).forEach(function (id) {
+        var m = moves[id];
+        (labAt[m.la] = labAt[m.la] || []).push({ lab: +id, s: 'L' });
+        (labAt[m.ra] = labAt[m.ra] || []).push({ lab: +id, s: 'R' });
+      });
       var emit = function (r) {
+        (labAt[r] || []).forEach(function (lb) { posLab[lb.lab + lb.s] = items.length; items.push(lb); });
         var x = rows[r];
         if (S.view === 'split' || x.t === 'ctx') { posL[r] = posR[r] = items.length; items.push({ i: r, s: 'B' }); return; }
         if (x.l !== null) { posL[r] = items.length; items.push({ i: r, s: 'L' }); }
@@ -457,6 +465,18 @@
       var car = f.carets ? '<span class="caret ' + (side === 'L' ? 'a">&#9654;' : 'd">&#9664;') + '</span>' : '';
       return '<div class="g ' + c + '"' + at + '>' + car + '</div><div class="c ' + c + '"' + at + '></div>';
     }
+    var GAP = '<div class="g r-pad"></div><div class="c r-pad"></div>';
+    function moveRange(m, to) {
+      var a = to ? rnAt[m.ra] : lnAt[m.la], b = to ? rnAt[m.rb] : lnAt[m.lb];
+      return a === b ? 'line ' + a : 'lines ' + a + '-' + b;
+    }
+    function moveHead(it) {
+      var m = moves[it.lab], to = it.s === 'L';
+      return '<div class="mvhead"><span class="mvin">' +
+        '<button type="button" class="mvgo" data-mv="' + it.lab + '" data-go="' + (to ? 'R' : 'L') + '" title="Go to the other end">' +
+        'Moved' + (m.changed ? ' with changes' : '') + (to ? ' to ' : ' from ') + moveRange(m, to) + '</button>' +
+        (m.changed ? '<button type="button" class="mvcmp" data-mv="' + it.lab + '">Compare</button>' : '') + '</span></div>';
+    }
     function foldBtn(fd) {
       var n = fd[1] - fd[0] + 1;
       return '<button type="button" class="fold" data-fold="' + fd[0] + '">&#8943; ' + n + ' unchanged line' + (n > 1 ? 's' : '') + '</button>';
@@ -467,7 +487,7 @@
       var anchor = null, off = 0;
       if (items && items.length) {
         var tp = Math.min(items.length - 1, Math.floor(editor.scrollTop / ROWH)), it = items[tp];
-        anchor = it.fold ? it.fold[0] : it.i; off = editor.scrollTop - tp * ROWH;
+        anchor = it.fold ? it.fold[0] : it.lab ? moves[it.lab][it.s === 'L' ? 'la' : 'ra'] : it.i; off = editor.scrollTop - tp * ROWH;
       }
       layout();
       var uni = S.view === 'unified', split = !uni;
@@ -480,6 +500,7 @@
         var hl = [], hr = [];
         items.forEach(function (it, p) {
           if (it.fold) { var fb = foldBtn(it.fold); hl.push(fb); hr.push(fb); return; }
+          if (it.lab) { hl.push(it.s === 'L' ? moveHead(it) : GAP); hr.push(it.s === 'R' ? moveHead(it) : GAP); return; }
           var x = rows[it.i];
           hl.push(x.l !== null ? line(it.i, 'L', p) : pad(it.i, 'L', p));
           hr.push(x.r !== null ? line(it.i, 'R', p) : pad(it.i, 'R', p));
@@ -494,7 +515,7 @@
       } else {
         body = '<div class="heads"><div class="h">' + lLabel + lSub + ' &rarr; <span class="r">' + rLabel + rSub + '</span></div></div>' +
           '<div class="grid"><div class="pane paneU">' + items.map(function (it, p) {
-            return it.fold ? foldBtn(it.fold) : line(it.i, it.s, p);
+            return it.fold ? foldBtn(it.fold) : it.lab ? moveHead(it) : line(it.i, it.s, p);
           }).join('') + '</div></div>' +
           '<div class="hbar"><div class="hs"><div></div></div></div>';
       }
@@ -589,24 +610,58 @@
       svg.innerHTML = out;
     }
 
-    /* --- selected move: outline both blocks, label links to the other end --- */
+    /* --- moved blocks: every end outlined (grey), the selected move amber --- */
     function drawSel() {
       [].slice.call(grid.querySelectorAll('.mvbox')).forEach(function (n) { n.remove(); });
       [].slice.call(grid.querySelectorAll('.conn g.mv')).forEach(function (g) { g.classList.toggle('sel', +g.getAttribute('data-mv') === S.sel); });
-      var m = moves[S.sel];
-      if (!m) return;
-      var box = function (pane, p0, p1, label, go) {
-        var el = document.createElement('div');
-        el.className = 'mvbox';
-        el.style.cssText = 'left:' + pane.offsetLeft + 'px;width:' + pane.clientWidth + 'px;top:' + p0 * ROWH + 'px;height:' + (p1 - p0 + 1) * ROWH + 'px';
-        el.innerHTML = '<button type="button" class="mvlabel" data-go="' + go + '">' + label + ' &#8599;</button>';
-        grid.appendChild(el);
+      var pl = grid.querySelector('.paneL') || grid.querySelector('.paneU'), pr = grid.querySelector('.paneR') || pl, frag = '';
+      var box = function (pane, p0, p1, sel) {
+        frag += '<div class="mvbox' + (sel ? ' sel' : '') + '" style="left:' + pane.offsetLeft + 'px;width:' + pane.clientWidth +
+          'px;top:' + p0 * ROWH + 'px;height:' + (p1 - p0 + 1) * ROWH + 'px"></div>';
       };
-      var rng = function (a, b) { return a === b ? 'line ' + a : 'lines ' + a + '-' + b; };
-      var w = m.changed ? 'moved with changes ' : 'moved ';
-      var pl = grid.querySelector('.paneL') || grid.querySelector('.paneU'), pr = grid.querySelector('.paneR') || pl;
-      box(pl, posL[m.la], posL[m.lb], w + 'to ' + rng(rnAt[m.ra], rnAt[m.rb]), 'R');
-      box(pr, posR[m.ra], posR[m.rb], w + 'from ' + rng(lnAt[m.la], lnAt[m.lb]), 'L');
+      Object.keys(moves).forEach(function (id) {
+        var m = moves[id], sel = +id === S.sel;
+        box(pl, posLab[id + 'L'], posL[m.lb], sel);
+        box(pr, posLab[id + 'R'], posR[m.rb], sel);
+      });
+      grid.insertAdjacentHTML('beforeend', frag);
+      // header labels stay in view when a pane is scrolled sideways
+      [].slice.call(grid.querySelectorAll('.pane')).forEach(function (pane) {
+        [].slice.call(pane.querySelectorAll('.mvin')).forEach(function (n) { n.style.width = pane.clientWidth + 'px'; });
+      });
+    }
+
+    /* --- Compare: a side-by-side diff of just the two ends of a moved block --- */
+    var cmpApi = null;
+    function closeCompare() {
+      var o = target.querySelector('.cmp');
+      if (cmpApi) cmpApi.destroy();
+      cmpApi = null;
+      if (o) o.remove();
+      editor.focus();
+    }
+    function compare(id) {
+      var m = moves[id];
+      if (!m) return;
+      closeCompare();
+      var side = function (t, a, b, k) {
+        return rows.slice(a, b + 1).filter(function (x) { return x.mv === +id && x.t === t; }).map(function (x) { return x[k]; }).join('\n');
+      };
+      var o = document.createElement('div');
+      o.className = 'cmp';
+      o.innerHTML = '<div class="cmp-win" role="dialog" aria-label="Compare moved block"><div class="cmp-bar">' +
+        '<span>Moved block: before ' + moveRange(m, false) + ' &rarr; after ' + moveRange(m, true) + '</span><span class="spacer"></span>' +
+        '<button type="button" class="tb cmp-close">Close (Esc)</button></div><div class="cmp-body"></div></div>';
+      target.appendChild(o);
+      cmpApi = render(o.querySelector('.cmp-body'), {
+        before: side('del', m.la, m.lb, 'l'), after: side('add', m.ra, m.rb, 'r'),
+        filename: opts.filename, language: LKEY, highlight: opts.highlight, tabSize: opts.tabSize,
+        leftLabel: 'Before', leftSub: moveRange(m, false), rightLabel: 'After', rightSub: moveRange(m, true),
+        collapse: false, features: { minimap: false, toolbar: false }
+      });
+      o.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeCompare(); e.stopPropagation(); });
+      o.addEventListener('click', function (e) { if (e.target === o || e.target.closest('.cmp-close')) closeCompare(); });
+      o.querySelector('.cmp-close').focus();
     }
     function select(id) {
       S.sel = S.sel === id ? 0 : id;
@@ -639,7 +694,7 @@
       var ids = Object.keys(moves).map(Number).sort(function (a, b) { return posL[moves[a].la] - posL[moves[b].la]; });
       if (!ids.length) return;
       var k = ids.indexOf(S.sel), id = ids[k < 0 ? (dir > 0 ? 0 : ids.length - 1) : (k + dir + ids.length) % ids.length];
-      S.sel = 0; select(id); scrollToPos(posL[moves[id].la]);
+      S.sel = 0; select(id); scrollToPos(posLab[id + 'L']);
     }
 
     /* --- minimap: the whole diff in miniature, draggable viewport --- */
@@ -675,6 +730,7 @@
       items.forEach(function (it, p) {
         var y = mmTop + p * rowPx;
         if (it.fold) { mctx.globalAlpha = 1; mctx.fillStyle = '#3a3a3a'; mctx.fillRect(2, y + rowPx / 2 - .5, w - 4, 1); return; }
+        if (it.lab) return;
         var x = rows[it.i];
         if (two) { lane(x.l, colorOf(x, 'L'), 2, y); lane(x.r, colorOf(x, 'R'), 3 + lw, y); }
         else lane(it.s === 'L' ? x.l : x.r, colorOf(x, it.s), 2, y);
@@ -715,9 +771,11 @@
     on(editor, 'click', function (e) {
       var t = e.target, el;
       if ((el = t.closest('.fold'))) { S.open[el.getAttribute('data-fold')] = 1; draw(); return; }
-      if ((el = t.closest('.mvlabel'))) {
-        var m = moves[S.sel];
-        if (m) scrollToPos(el.getAttribute('data-go') === 'R' ? posR[m.ra] : posL[m.la]);
+      if ((el = t.closest('.mvcmp'))) { compare(+el.getAttribute('data-mv')); return; }
+      if ((el = t.closest('.mvgo'))) {
+        var id = +el.getAttribute('data-mv');
+        if (S.sel !== id) select(id);
+        scrollToPos(posLab[id + el.getAttribute('data-go')]);
         return;
       }
       if ((el = t.closest('[data-mv]'))) { select(+el.getAttribute('data-mv')); return; }
