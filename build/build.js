@@ -1,19 +1,26 @@
 #!/usr/bin/env node
-/* cleave build — inline src/cleave.css + src/cleave.js into self-contained HTML.
+/* cleave build: inline src/cleave.css + src/cleave.js into self-contained HTML.
  *
- *   node build/build.js                         # regenerate dist/ with the sample diff
- *   node build/build.js --before a.js --after b.js --filename a.js --lang js --out mydiff.html
+ *   node build/build.js                         # regenerate dist/ with the gold example
+ *   node build/build.js --before a.js --after b.js --out mydiff.html
+ *   node build/build.js --git HEAD~1 --file src/app.js --out mydiff.html       # ref vs working tree
+ *   node build/build.js --git v1.0..v2.0 --file src/app.js --out mydiff.html   # ref vs ref
  *
  * Flags:
  *   --before/-b FILE   left text        --after/-a FILE   right text
- *   --filename NAME    titlebar name    --lang LANG       js|text|...
+ *   --git REF[..REF2] --file PATH       left = PATH at REF; right = PATH at REF2, or the working tree
+ *   --filename NAME    titlebar name    --lang LANG       py|ts|go|... (default: from the filename)
  *   --left LABEL --right LABEL --subtitle TEXT
+ *   --unified          start in unified view       --no-collapse   show unchanged runs in full
+ *   --ignore-ws        start ignoring whitespace
  *   --out FILE         write ONE file (extension-agnostic); form chosen by --form
  *   --form full|artifact   default: writes BOTH dist/cleave.standalone.html and
  *                          dist/cleave.artifact.html when --out is omitted
  */
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
+const { langFromFilename } = require('../src/cleave.js');
 
 const ROOT = path.resolve(__dirname, '..');
 const CSS = fs.readFileSync(path.join(ROOT, 'src/cleave.css'), 'utf8');
@@ -31,45 +38,52 @@ function arg(names, def) {
   return def;
 }
 
-const SAMPLE_BEFORE = `function loadRules(path) {
-  const raw = fs.readFileSync(path);
-  const rules = new Set();
-  let count = 0;
-  for (const line of raw.split('\\n')) {
-    const rule = line.split('#')[0].trim();
-    if (rule) rules.push(rule);
-  }
-  return rules;
-}`;
-const SAMPLE_AFTER = `function loadRules(path) {
-  const raw = fs.readFileSync(path, 'utf8');
-  const rules = new Set();
-  for (const line of raw.split('\\n')) {
-    if (!line.trim()) continue;
-    const rule = line.split('#')[0].trim();
-    if (rule) rules.add(rule);
-  }
-  return rules;
-}`;
+// default sample: the gold-standard example that exercises every diff case
+const GOLD = path.join(ROOT, 'examples/gold');
 
-const beforeFile = arg(['--before', '-b']);
-const afterFile = arg(['--after', '-a']);
+const flag = n => process.argv.includes(n);
+
+// a file as it was at a git ref ('' if it did not exist there, e.g. a newly added file)
+function gitShow(ref, file) {
+  const rel = path.relative(process.cwd(), path.resolve(file)).split(path.sep).join('/');
+  try { return execFileSync('git', ['show', ref + ':./' + rel], { encoding: 'utf8', maxBuffer: 1 << 28 }); }
+  catch (e) { console.error('note: ' + file + ' not found at ' + ref + ', treating as empty'); return ''; }
+}
+
+const git = arg(['--git']);
+let before, after, leftSub, rightSub, name;
+if (git) {
+  const file = arg(['--file']);
+  if (!file) { console.error('--git needs --file PATH'); process.exit(2); }
+  const [r1, r2] = git.split('..');
+  before = gitShow(r1, file);
+  after = r2 ? gitShow(r2, file) : fs.readFileSync(file, 'utf8');
+  leftSub = r1; rightSub = r2 || 'working tree'; name = path.basename(file);
+} else {
+  const beforeFile = arg(['--before', '-b']), afterFile = arg(['--after', '-a']);
+  before = fs.readFileSync(beforeFile || path.join(GOLD, 'before.js'), 'utf8');
+  after = fs.readFileSync(afterFile || path.join(GOLD, 'after.js'), 'utf8');
+  name = beforeFile ? path.basename(afterFile || beforeFile) : 'cache-server.js';
+}
+const filename = arg(['--filename'], name);
 const data = {
-  before: beforeFile ? fs.readFileSync(beforeFile, 'utf8') : SAMPLE_BEFORE,
-  after: afterFile ? fs.readFileSync(afterFile, 'utf8') : SAMPLE_AFTER,
-  filename: arg(['--filename'], beforeFile ? path.basename(beforeFile) : 'loadRules.js'),
-  language: arg(['--lang', '--language'], 'js'),
+  before, after, filename,
+  language: arg(['--lang', '--language'], langFromFilename(filename)),
   leftLabel: arg(['--left'], 'Before'),
   rightLabel: arg(['--right'], 'After'),
-  subtitle: arg(['--subtitle'], 'side-by-side diff'),
+  subtitle: arg(['--subtitle'], 'diff'),
+  view: flag('--unified') ? 'unified' : 'split',
+  collapse: !flag('--no-collapse'),
+  ignoreWhitespace: flag('--ignore-ws'),
 };
+if (leftSub) Object.assign(data, { leftSub, rightSub });
 
 // JSON embedded in a <script> must not contain a literal </script>.
 const dataJSON = JSON.stringify(data, null, 2).replace(/<\//g, '<\\/');
 const BOOT =
   '(function(){var el=document.getElementById("app"),d={};' +
   'try{d=JSON.parse(document.getElementById("cleave-data").textContent);}catch(e){' +
-  'el.textContent="cleave: bad data — "+e;return;}Cleave.render(el,d);})();';
+  'el.textContent="cleave: bad data: "+e;return;}Cleave.render(el,d);})();';
 
 function fullDoc() {
   return `<!doctype html>
@@ -77,7 +91,7 @@ function fullDoc() {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>${esc(data.filename)} — cleave</title>
+<title>${esc(data.filename)} · cleave</title>
 ${FONTS}
 <style>
 html,body{height:100%;margin:0;background:#1e1e1e}
@@ -95,7 +109,7 @@ ${CSS}
 `;
 }
 
-// Artifact form: no <!doctype>/<html>/<head>/<body> — the Claude Artifact skeleton adds them.
+// Artifact form: no <!doctype>/<html>/<head>/<body>; the Claude Artifact skeleton adds them.
 function artifactDoc() {
   return `<title>${esc(data.filename)} diff</title>
 ${FONTS}
